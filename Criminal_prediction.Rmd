@@ -36,7 +36,7 @@ plot(km,xlab='Time (months)',ylab='Survival (proportion not rearrested)')
 
 ```{r}
 
-models=list("Age"=coxph(Surv(MinMonthsNonVio,   NonVioChargeSinceScanExclPVs)~releaseAge_centered, 
+models_nonvio=list("Age"=coxph(Surv(MinMonthsNonVio,   NonVioChargeSinceScanExclPVs)~releaseAge_centered, 
                        data=alldata, y=TRUE), 
             "dACC"=coxph(Surv(MinMonthsNonVio, NonVioChargeSinceScanExclPVs)~dACC_centered, 
                        data=alldata, y=TRUE), 
@@ -45,36 +45,32 @@ models=list("Age"=coxph(Surv(MinMonthsNonVio,   NonVioChargeSinceScanExclPVs)~re
 ```
 
 
-Perform cross-validation and compute prediction error.
+Perform cross-validation and compute prediction error for nonviolent crimes.
 
 ```{r}
 force_new=FALSE  # set to true to force rerunning the models
 
-if (!file.exists('pred_err.Rdata') | force_new){
+if (!file.exists('pred_err_nonviolent.Rdata') | force_new){
   
   nrep=1000   # number of crossvalidation runs to average
 
-  pred_err=pec(models,formula=Surv(MinMonthsNonVio, NonVioChargeSinceScanExclPVs)~1,
+  pred_err=pec(models_nonvio,formula=Surv(MinMonthsNonVio, NonVioChargeSinceScanExclPVs)~1,
                        data=alldata,
                         splitMethod="cv10", B=nrep,
                        	verbose=FALSE,
                        	keep.index=TRUE,
                        	keep.matrix=TRUE)
-  save(pred_err,file='pred_err.Rdata')
+  save(pred_err,file='pred_err_nonviolent.Rdata')
 } else {
   print('using saved data file')
-  load('pred_err.Rdata')
+  load('pred_err_nonviolent.Rdata')
 }
 print (pred_err)
-```
-
-Compute prediction error and compare models
-
-```{r}
-
 cverr=crps(pred_err,times=48.8)[,'crossvalErr']
-print(sprintf('Improvement for Age+dACC over Age: %0.3f',(cverr['Age']-cverr['Age.dACC'])/cverr['Age']))
+print(sprintf('Improvement for Age+dACC over Age (nonviolent crimes): %0.3f',(cverr['Age']-cverr['Age.dACC'])/cverr['Age']))
+
 ```
+
 
 Save crossvalidated prediction error across all of the runs for the baseline (Age) and baseline + dACC models.  (We will plot it in python using plot_prederr.py)
 
@@ -106,4 +102,28 @@ knitr::include_graphics('prediction_error.png')
 knitr::include_graphics('survival_by_dACC.png')
 
 ```
+Run same analysis using .632+ bootstrap rather than crossvalidation.
 
+```{r}
+force_new=FALSE  # set to true to force rerunning the models
+
+if (!file.exists('pred_err_nonviolent_boot.Rdata') | force_new){
+  
+  nrep=1000   # number of crossvalidation runs to average
+
+  pred_err_boot=pec(models_nonvio,formula=Surv(MinMonthsNonVio, NonVioChargeSinceScanExclPVs)~1,
+                       data=alldata,
+                        splitMethod="Boot632plus", B=nrep,
+                       	verbose=FALSE,
+                       	keep.index=TRUE,
+                       	keep.matrix=TRUE)
+  save(pred_err_boot,file='pred_err_nonviolent_boot.Rdata')
+} else {
+  print('using saved data file')
+  load('pred_err_nonviolent_boot.Rdata')
+}
+print (pred_err_boot)
+booterr=crps(pred_err_boot,times=46.6)[,'Boot632plusErr']
+print(sprintf('Improvement for Age+dACC over Age (nonviolent crimes - boot632+): %0.3f',(booterr['Age']-booterr['Age.dACC'])/booterr['Age']))
+
+```
