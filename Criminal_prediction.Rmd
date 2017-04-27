@@ -52,9 +52,9 @@ force_new=FALSE  # set to true to force rerunning the models
 
 if (!file.exists('pred_err.Rdata') | force_new){
   
-  nrep=500   # number of crossvalidation runs to average
+  nrep=1000   # number of crossvalidation runs to average
 
-  pred_err=pec(models,formula=Surv(MinMonthsNonVio, NonVioChargeSinceScanExclPVs)~1, 
+  pred_err=pec(models,formula=Surv(MinMonthsNonVio, NonVioChargeSinceScanExclPVs)~1,
                        data=alldata,
                         splitMethod="cv10", B=nrep,
                        	verbose=FALSE,
@@ -89,9 +89,11 @@ for (r in 1:nrep){
   baseline_cverr[r,]=pred_err$CrossValErrMat[[r]]$Age[1:npts]
   dacc_cverr[r,]=pred_err$CrossValErrMat[[r]]$Age.dACC[1:npts]
 }
-
-write.table(baseline_cverr,file='baseline_cverr.txt')
-write.table(dacc_cverr,file='dacc_cverr.txt')
+mean_baseline_err=apply(baseline_cverr,2,mean)
+mean_dacc_err=apply(dacc_cverr,2,mean)
+df=data.frame(pred_err$time[1:92],mean_baseline_err,mean_dacc_err)
+names(df)=c('time','baseline','dacc')
+write.table(df,file='cverr_data.txt')
 ```
 
 Make figures using Python.
@@ -101,6 +103,7 @@ Make figures using Python.
 system('bash runpy.sh')
 library(knitr)
 knitr::include_graphics('prediction_error.png')
+knitr::include_graphics('survival_by_dACC.png')
 
 ```
 
