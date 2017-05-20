@@ -1,9 +1,9 @@
 ---
 title: 'Neuroprediction of future rearrest: A re-analysis'
 output:
-  pdf_document: default
-  html_notebook: default
   html_document: default
+  html_notebook: default
+  pdf_document: default
 ---
 
 This notebook outlines the re-analysis of the criminal prediction data from Aharoni et al. (2013, PNAS).  The original code was developed by Russ Poldrack and Jeanette Mumford, and presented at http://www.russpoldrack.org/2013/04/how-well-can-we-predict-future-criminal.html.  This notebook is meant to accompany the manuscript titled "Predicting violent behavior: What can neuroscience add?" by R.Poldrack et al.
@@ -100,7 +100,7 @@ Make figures using Python.
 
 ```{r}
 
-system('bash runpy.sh')
+#system('bash runpy.sh')
 library(knitr)
 knitr::include_graphics('prediction_error.png')
 knitr::include_graphics('survival_by_dACC.png')
