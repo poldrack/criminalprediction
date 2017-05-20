@@ -23,6 +23,8 @@ library(colorspace)
 First we load the data that were downloaded from the PNAS site and converted to text.
 ```{r}
 alldata=read.table('aharoni_data_fixed.txt',header=TRUE, na.strings=".")
+# use the same time cutoff that Aharoni used in their plots
+time_cutoff=max(alldata$MinMonthsNonVio[alldata$NonVioChargeSinceScanExclPVs==1])
 ```
 
 Compute the overall survival curve, and plot the Kaplan-Meier curve.
@@ -87,7 +89,8 @@ for (r in 1:nrep){
 }
 mean_baseline_err=apply(baseline_cverr,2,mean)
 mean_dacc_err=apply(dacc_cverr,2,mean)
-df=data.frame(pred_err$time[1:92],mean_baseline_err,mean_dacc_err)
+goodtps=which(pred_err$time<=time_cutoff)
+df=data.frame(pred_err$time[goodtps],mean_baseline_err[goodtps],mean_dacc_err[goodtps])
 names(df)=c('time','baseline','dacc')
 write.table(df,file='cverr_data.txt')
 ```
@@ -126,4 +129,67 @@ print (pred_err_boot)
 booterr=crps(pred_err_boot,times=46.6)[,'Boot632plusErr']
 print(sprintf('Improvement for Age+dACC over Age (nonviolent crimes - boot632+): %0.3f',(booterr['Age']-booterr['Age.dACC'])/booterr['Age']))
 
+```
+
+Run analysis using AUC rather than Brier index, as suggested by Peter Imrey.
+
+Example code from survAUC documentation:
+
+TR <- ovarian[1:16,]
+TE <- ovarian[17:26,]
+train.fit <- coxph(Surv(futime, fustat) ~ age,
+x=TRUE, y=TRUE, method="breslow", data=TR)
+lpnew <- predict(train.fit, newdata=TE)
+Surv.rsp <- Surv(TR$futime, TR$fustat)
+Surv.rsp.new <- Surv(TE$futime, TE$fustat)
+8 BeggC
+times <- seq(10, 1000, 10)
+AUC_Uno <- AUC.uno(Surv.rsp, Surv.rsp.new, lpnew, times)
+names(AUC_Uno)
+AUC_Uno$iauc
+
+
+```{r}
+library(survAUC)
+
+get_auc_fold = function(alldata, trainpts,testpts){
+  traindata=alldata[trainpts,]
+  testdata=alldata[testpts,]
+  Surv.rsp <- Surv(traindata$MinMonthsNonVio, traindata$NonVioChargeSinceScanExclPVs)
+  Surv.rsp.new <- Surv(testdata$MinMonthsNonVio, testdata$NonVioChargeSinceScanExclPVs)
+  
+  train.fit.Age=coxph(Surv(MinMonthsNonVio,   NonVioChargeSinceScanExclPVs)~releaseAge_centered, 
+                         data=traindata, y=TRUE)
+  
+  lpnew.Age <- predict(train.fit.Age, newdata=testdata)
+  
+  train.fit.Age_dACC=coxph(Surv(MinMonthsNonVio,   NonVioChargeSinceScanExclPVs)~releaseAge_centered + dACC_centered, 
+                         data=traindata, y=TRUE)
+  
+  lpnew.Age_dACC <- predict(train.fit.Age_dACC, newdata=testdata)
+  
+  
+  times=seq(1,44)
+  AUC_Uno_Age <- AUC.uno(Surv.rsp, Surv.rsp.new, lpnew.Age, times)
+  AUC_Uno_Age_dACC <- AUC.uno(Surv.rsp, Surv.rsp.new, lpnew.Age_dACC, times)
+  
+  return(c(AUC_Uno_Age$iauc,AUC_Uno_Age_dACC$iauc))
+}
+
+nruns=1000
+nfold=10
+results=c()
+for (r in 1:nruns) {
+  folds=createFolds(alldata$MinMonthsDV_noPVs,nfolds,list=FALSE)
+  for (f in 1:nfolds){
+    trainIndexes =  which(folds!=f,arr.ind=TRUE)
+    testIndexes <- which(folds==f,arr.ind=TRUE)
+    results=rbind(results,get_auc_fold(alldata,trainIndexes,testIndexes))
+
+  }
+}
+
+mean_auc=apply(results,2,mean)
+print('AUC ratio for age+dACC vs. age alone')
+print(mean_auc[2]/mean_auc[1])
 ```
