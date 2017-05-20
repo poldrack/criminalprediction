@@ -189,5 +189,5 @@ print(sprintf('AUC - age: %f',mean_auc[1]))
 print(sprintf('AUC - age + dACC: %f',mean_auc[2]))
 
 print('AUC ratio for age+dACC vs. age alone')
-print(mean_auc[2]/mean_auc[1])
+print((mean_auc[2]-mean_auc[1])/mean_auc[1])
 ```
