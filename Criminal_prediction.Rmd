@@ -16,7 +16,7 @@ library(rms)
 library(ROCR)
 library(pec)
 library(colorspace)
-
+library(caret)
 
 ```
 
@@ -133,21 +133,6 @@ print(sprintf('Improvement for Age+dACC over Age (nonviolent crimes - boot632+):
 
 Run analysis using AUC rather than Brier index, as suggested by Peter Imrey.
 
-Example code from survAUC documentation:
-
-TR <- ovarian[1:16,]
-TE <- ovarian[17:26,]
-train.fit <- coxph(Surv(futime, fustat) ~ age,
-x=TRUE, y=TRUE, method="breslow", data=TR)
-lpnew <- predict(train.fit, newdata=TE)
-Surv.rsp <- Surv(TR$futime, TR$fustat)
-Surv.rsp.new <- Surv(TE$futime, TE$fustat)
-8 BeggC
-times <- seq(10, 1000, 10)
-AUC_Uno <- AUC.uno(Surv.rsp, Surv.rsp.new, lpnew, times)
-names(AUC_Uno)
-AUC_Uno$iauc
-
 
 ```{r}
 library(survAUC)
@@ -176,20 +161,33 @@ get_auc_fold = function(alldata, trainpts,testpts){
   return(c(AUC_Uno_Age$iauc,AUC_Uno_Age_dACC$iauc))
 }
 
-nruns=1000
-nfold=10
-results=c()
-for (r in 1:nruns) {
-  folds=createFolds(alldata$MinMonthsDV_noPVs,nfolds,list=FALSE)
-  for (f in 1:nfolds){
-    trainIndexes =  which(folds!=f,arr.ind=TRUE)
-    testIndexes <- which(folds==f,arr.ind=TRUE)
-    results=rbind(results,get_auc_fold(alldata,trainIndexes,testIndexes))
+force_new=FALSE  # set to true to force rerunning the models
 
+if (!file.exists('AUC_results.Rdata') | force_new){
+
+  nruns=1000
+  nfolds=10
+  results=c()
+  for (r in 1:nruns) {
+    folds=createFolds(alldata$MinMonthsDV_noPVs,nfolds,list=FALSE)
+    for (f in 1:nfolds){
+      trainIndexes =  which(folds!=f,arr.ind=TRUE)
+      testIndexes <- which(folds==f,arr.ind=TRUE)
+      results=rbind(results,get_auc_fold(alldata,trainIndexes,testIndexes))
+  
+    }
   }
-}
+  save(results,file='AUC_results.Rdata')
 
+} else {
+  print('using saved AUC data file')
+  load('AUC_results.Rdata')
+}
+ 
 mean_auc=apply(results,2,mean)
+print(sprintf('AUC - age: %f',mean_auc[1]))
+print(sprintf('AUC - age + dACC: %f',mean_auc[2]))
+
 print('AUC ratio for age+dACC vs. age alone')
 print(mean_auc[2]/mean_auc[1])
 ```
