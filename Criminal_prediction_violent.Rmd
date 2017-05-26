@@ -1,0 +1,215 @@
+---
+title: 'Neuroprediction of future rearrest: A re-analysis'
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document: default
+---
+
+This notebook outlines the re-analysis of the criminal prediction data from Aharoni et al. (2013, PNAS).  The original code was developed by Russ Poldrack and Jeanette Mumford, and presented at http://www.russpoldrack.org/2013/04/how-well-can-we-predict-future-criminal.html.  This notebook is meant to accompany the manuscript titled "Predicting violent behavior: What can neuroscience add?" by R.Poldrack et al.
+
+In these analyses we focus on violent crimes only, given that this is the focus of the paper.  We note that the prediction results are substantially better for nonviolent crimes.
+
+
+```{r echo=FALSE}
+library(survival)
+library(rms)
+library(ROCR)
+library(pec)
+library(colorspace)
+library(caret)
+
+```
+
+First we load the data that were downloaded from the PNAS site and converted to text.
+```{r}
+alldata=read.table('aharoni_data_fixed.txt',header=TRUE, na.strings=".")
+# use the same time cutoff that Aharoni used in their plots
+time_cutoff=max(alldata$MinMonthsDV_noPVs[alldata$VioChargeSinceScanExclPVs==1])
+```
+
+Compute the overall survival curve, and plot the Kaplan-Meier curve.
+
+```{r}
+s=survival::Surv(time=alldata$MinMonthsDV_noPVs,event=alldata$VioChargeSinceScanExclPVs,type='right')
+km=survfit(s~1)
+plot(km,xlab='Time (months)',ylab='Survival (proportion not rearrested)')
+
+```
+
+Plot K-M separated by dACC
+
+```{r}
+
+km_acc=survfit(s~alldata$dACC_14mm_split)
+survdata=data.frame(km_acc$time,km_acc$surv)
+write.table(survdata,file='km_accsplit_vio.txt',row.names=FALSE)
+plot(km_acc,xlab='Time (months)',ylab='Survival (proportion not rearrested)')
+
+```
+
+```{r}
+
+models_vio=list("Age"=coxph(Surv(MinMonthsDV_noPVs,   VioChargeSinceScanExclPVs)~releaseAge_centered, 
+                       data=alldata, y=TRUE), 
+            "dACC"=coxph(Surv(MinMonthsDV_noPVs, VioChargeSinceScanExclPVs)~dACC_centered, 
+                       data=alldata, y=TRUE), 
+         	"Age.dACC"=coxph(Surv(MinMonthsDV_noPVs, VioChargeSinceScanExclPVs)~releaseAge_centered+ dACC_centered, data=alldata, y=TRUE))
+
+```
+
+
+Perform cross-validation and compute prediction error for violent crimes.
+
+```{r}
+force_new=FALSE  # set to true to force rerunning the models
+
+if (!file.exists('pred_err_violent.Rdata') | force_new){
+  
+  nrep=1000   # number of crossvalidation runs to average
+
+  pred_err=pec(models_vio,formula=Surv(MinMonthsDV_noPVs, VioChargeSinceScanExclPVs)~1,
+                       data=alldata,
+                        splitMethod="cv10", B=nrep,
+                       	verbose=FALSE,
+                       	keep.index=TRUE,
+                       	keep.matrix=TRUE)
+  save(pred_err,file='pred_err_violent.Rdata')
+} else {
+  print('using saved data file')
+  load('pred_err_violent.Rdata')
+}
+print (pred_err)
+# Note: 47.71 is the longest time for which the integrated Brier score is defined
+cverr=crps(pred_err,times=47.71)[,'crossvalErr']
+print(sprintf('Improvement for Age+dACC over Age (violent crimes): %0.3f',(cverr['Age']-cverr['Age.dACC'])/cverr['Age']))
+
+```
+
+
+Save crossvalidated prediction error across all of the runs for the baseline (Age) and baseline + dACC models.  (We will plot it in python using plot_prederr.py)
+
+```{r}
+
+# first need to collapse the error into individual variables
+nrep=length(pred_err$CrossValErrMat)
+npts=length(pred_err$CrossValErrMat[[1]]$Reference)-1 # remove last point
+baseline_cverr=matrix(NA,nrep,npts)
+dacc_cverr=matrix(NA,nrep,npts)
+for (r in 1:nrep){
+  baseline_cverr[r,]=pred_err$CrossValErrMat[[r]]$Age[1:npts]
+  dacc_cverr[r,]=pred_err$CrossValErrMat[[r]]$Age.dACC[1:npts]
+}
+mean_baseline_err=apply(baseline_cverr,2,mean)
+mean_dacc_err=apply(dacc_cverr,2,mean)
+goodtps=which(pred_err$time<=time_cutoff)
+df=data.frame(pred_err$time[goodtps],mean_baseline_err[goodtps],mean_dacc_err[goodtps])
+names(df)=c('time','baseline','dacc')
+write.table(df,file='cverr_data_violent.txt')
+```
+
+Make figures using Python.
+
+```{r}
+
+#system('bash runpy.sh')
+library(knitr)
+knitr::include_graphics('prediction_error_violent.png')
+knitr::include_graphics('survival_by_dACC_violent.png')
+
+```
+Run same analysis using .632+ bootstrap rather than crossvalidation.
+
+```{r}
+force_new=FALSE  # set to true to force rerunning the models
+
+if (!file.exists('pred_err_violent_boot.Rdata') | force_new){
+  
+  nrep=1000   # number of crossvalidation runs to average
+
+  pred_err_boot=pec(models_vio,formula=Surv(MinMonthsDV_noPVs, VioChargeSinceScanExclPVs)~1,
+                       data=alldata,
+                        splitMethod="Boot632plus", B=nrep,
+                       	verbose=FALSE,
+                       	keep.index=TRUE,
+                       	keep.matrix=TRUE)
+  save(pred_err_boot,file='pred_err_violent_boot.Rdata')
+} else {
+  print('using saved data file')
+  load('pred_err_violent_boot.Rdata')
+}
+print (pred_err_boot)
+booterr=crps(pred_err_boot,times=46.6)[,'Boot632plusErr']
+print(sprintf('Improvement for Age+dACC over Age (violent crimes - boot632+): %0.3f',(booterr['Age']-booterr['Age.dACC'])/booterr['Age']))
+
+```
+
+Run analysis using AUC rather than Brier index, as suggested by Peter Imrey.  It was not clear which of the different AUC models was most appropriate for these data, so I just ran all of them.
+
+
+```{r}
+library(survAUC)
+
+get_auc_fold = function(alldata, trainpts,testpts){
+  traindata=alldata[trainpts,]
+  testdata=alldata[testpts,]
+  Surv.rsp <- Surv(traindata$MinMonthsDV_noPVs, traindata$VioChargeSinceScanExclPVs)
+  Surv.rsp.new <- Surv(testdata$MinMonthsDV_noPVs, testdata$VioChargeSinceScanExclPVs)
+  
+  train.fit.Age=coxph(Surv(MinMonthsDV_noPVs,   VioChargeSinceScanExclPVs)~releaseAge_centered, 
+                         data=traindata, y=TRUE)
+  
+  lpnew.Age <- predict(train.fit.Age, newdata=testdata)
+  lp.Age <- predict(train.fit.Age)
+  
+  train.fit.Age_dACC=coxph(Surv(MinMonthsDV_noPVs,   VioChargeSinceScanExclPVs)~releaseAge_centered + dACC_centered, 
+                         data=traindata, y=TRUE)
+  
+  lpnew.Age_dACC <- predict(train.fit.Age_dACC, newdata=testdata)
+  lp.Age_dACC <- predict(train.fit.Age_dACC)
+  
+  
+  times=seq(1,44)
+  AUC_Uno_Age <- AUC.uno(Surv.rsp, Surv.rsp.new, lpnew.Age, times)
+  AUC_Uno_Age_dACC <- AUC.uno(Surv.rsp, Surv.rsp.new, lpnew.Age_dACC, times)
+  AUC_hc_Age <- AUC.hc(Surv.rsp, Surv.rsp.new, lpnew.Age, times)
+  AUC_hc_Age_dACC <- AUC.hc(Surv.rsp, Surv.rsp.new, lpnew.Age_dACC, times)
+  AUC_sh_Age <- AUC.sh(Surv.rsp, Surv.rsp.new, lp.Age, lpnew.Age, times)
+  AUC_sh_Age_dACC <- AUC.sh(Surv.rsp, Surv.rsp.new, lp.Age_dACC,lpnew.Age_dACC, times)
+  AUC_cd_Age <- AUC.cd(Surv.rsp, Surv.rsp.new, lp.Age, lpnew.Age, times)
+  AUC_cd_Age_dACC <- AUC.cd(Surv.rsp, Surv.rsp.new, lp.Age_dACC,lpnew.Age_dACC, times)
+  
+  return(c(AUC_Uno_Age$iauc,AUC_Uno_Age_dACC$iauc,AUC_hc_Age$iauc,AUC_hc_Age_dACC$iauc,AUC_sh_Age$iauc,AUC_sh_Age_dACC$iauc,AUC_cd_Age$iauc,AUC_cd_Age_dACC$iauc))
+}
+
+force_new=FALSE  # set to true to force rerunning the models
+
+if (!file.exists('AUC_results_violent.Rdata') | force_new){
+
+  nruns=1000
+  nfolds=4
+  results=c()
+  for (r in 1:nruns) {
+    folds=createFolds(alldata$MinMonthsDV_noPVs,nfolds,list=FALSE)
+    for (f in 1:nfolds){
+      trainIndexes =  which(folds!=f,arr.ind=TRUE)
+      testIndexes <- which(folds==f,arr.ind=TRUE)
+      results=rbind(results,get_auc_fold(alldata,trainIndexes,testIndexes))
+  
+    }
+  }
+  save(results,file='AUC_results_violent.Rdata')
+
+} else {
+  print('using saved AUC data file')
+  load('AUC_results_violent.Rdata')
+}
+ 
+mean_auc=apply(results,2,mean)
+print(sprintf('AUC - age: %f (Uno), %f (hc), %f (sh), %f (cd)',mean_auc[1],mean_auc[3],mean_auc[5],mean_auc[7]))
+print(sprintf('AUC - age + dACC: %f (Uno), %f (hc), %f (sh), %f (cd)',mean_auc[2],mean_auc[4],mean_auc[6],mean_auc[8]))
+
+print('AUC ratio for age+dACC vs. age alone')
+auc_ratio=(mean_auc[c(2,4,6,8)]-mean_auc[c(1,3,5,7)])/mean_auc[c(1,3,5,7)]
+print(sprintf('%f (Uno), %f (hc), %f (sh), %f (cd)',auc_ratio[1],auc_ratio[2],auc_ratio[3],auc_ratio[4]))
+```
