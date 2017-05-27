@@ -44,7 +44,8 @@ Plot K-M separated by dACC
 km_acc=survfit(s~alldata$dACC_14mm_split)
 survdata=data.frame(km_acc$time,km_acc$surv)
 write.table(survdata,file='km_accsplit_vio.txt',row.names=FALSE)
-plot(km_acc,xlab='Time (months)',ylab='Survival (proportion not rearrested)')
+plot(km_acc,xlab='Time (months)',ylab='Survival (proportion not rearrested)',col=c('blue','red'),lwd=c(2,2))
+legend(0.5, legend=c('below median dACC','above median dACC'),lty=c(1,1),lwd=c(2,2),col=c('blue','red'))
 
 ```
 
@@ -115,7 +116,7 @@ Make figures using Python.
 #system('bash runpy.sh')
 library(knitr)
 knitr::include_graphics('prediction_error_violent.png')
-knitr::include_graphics('survival_by_dACC_violent.png')
+#knitr::include_graphics('survival_by_dACC_violent.png')
 
 ```
 Run same analysis using .632+ bootstrap rather than crossvalidation.
